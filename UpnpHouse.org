@@ -137,7 +137,7 @@ void S_logger(int level, const char * tag, const char * str);
 
 int main(){
 #define TAG "Main-Initialization"
-n<<GST_INIT>>
+<<GST_INIT>>
 <<UPNP_INIT>>
 }
 #+END_SRC
