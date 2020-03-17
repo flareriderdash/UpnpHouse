@@ -1,0 +1,183 @@
+#+TITLE: UpnpHouse
+#+AUTHOR: Gabriel X. S. Smith
+
+#+LATEX_HEADER:\usepackage[style=apa]{biblatex}
+#+LATEX_HEADER:\addbibresource{Bibliography.bib}
+#+LATEX_HEADER:\usepackage[margin=1in]{geometry}
+
+* Abstract
+  UpnpHouse is a simple distributed media sharing service with the
+  goal of being able to share and stream musical content to UPNP/DLNA[[[term:upnp]]]
+  complient devices from any control device, while keeping all data
+  flow in sync over the network.
+* Build System
+* Upnp Connection Manager <<idea:upnp_man>>
+  The Upnp Connection Manager will facilitate discover and facilitate
+  connections with avalible and compatible MediaRenders[[[term:mediarender]]].
+** UPNP INIT <<UPNP_INIT>>
+   In main we must call the initialization function for the Upnp
+   Connection Manager and do a bit of set up. See [[[func:main]]] for a
+   full definition of the main function.
+
+   We want our connection manager to operate on any open port and to
+   operate on the first network adapter[[[notes:adapter]]] and to print
+   any errors
+
+#+NAME:UPNP_INIT
+#+BEGIN_SRC C :noweb yes 
+  int ret=0;
+
+  // Use first adapter on any open port
+  ret = UpnpInit(NULL,0);
+  if (ret != UPNP_E_SUCCESS){
+    exit(-1);
+    logger(TAG,ret);
+  }
+
+#+END_SRC
+* Gstreamer
+  This is the actual media streaming framework. The version used in
+  this project will be Gstreamer 1.0[[[term:gstreamer]]]. Honestly this will be where the
+  majority of code execution will occur. In here we will be connecting
+  data pipelines[[[term:pipeline]]] from arbitrary start points to arbitary end
+  points[[[term:sepoint]]]. In practice, we will see that most start points will be:
+  media streaming platforms (like spotify), locally stored media (on
+  some nearby network location) and from device control points (via
+  streaming or uploaded media files); all of which have media types
+  Gstreamer is capable of handling. Most end points will be UPNP/DLNA[[[term:upnp]]]
+  complient audio MediaRender devices that can accept audio formats
+  that Gstreamer can handle, however aditional functionality can be
+  added later to support a wider range of media types.
+  
+
+* Inter-Thread Communication
+* Logging <<idea:logging>>
+  Logging is done via file or stderr, following a structure that describes:
+  - Type of logging, whether it be a debug message, a fatal error message or
+    a less serious issue encoutered during code execution.
+  - A timestamp percise to the millisecond, for obvious reasons.
+  - Tag/context that tells the reader of the log file where in the
+    code the error occurs. These tags will be defined within specific
+    areas of the source code. For an example see [[[func:main]]].
+  - The specific error experienced or message.
+
+    
+**  Specification
+   To be definate on what this code will look like an example is best
+   used here. Do be aware, the way the timestamp is laied out has no
+   importance, only as long as the timestamp is placed after the
+   logging type with a space seperating the two within the brackets.
+
+   We must remeber the limitations of C and the lack of overloading
+   functions. So we must create two functions, one for error messages
+   that would take an int error code and translate that into the
+   associated error string to put into the log and another function
+   that would take a direct messages from the logger call arguements.
+   
+   Here are examples of log messages:
+   #+BEGIN_EXAMPLE
+   [DEBUG 2020-11-14] Main-initialization. Initializing Gstreamer
+   [FATAL 2020-11-14] Main-initialization. Error: UPNP_E_INIT_FAILED
+   #+END_EXAMPLE
+
+   Logger Source Code:
+#+NAME:logger
+  #+BEGIN_SRC C :noweb yes :tangle src/logger.c
+    #include<string.h>
+    #include<stdio.h>
+
+    // Error logger
+    void  U_logger(int * level, const char* TAG, int error_code){
+
+    }
+
+    // Debug logger
+    void  S_logger(int * level, const char* TAG, const char * msg){
+    }
+  #+END_SRC   
+
+Logger Header:
+  #+BEGIN_SRC C :noweb yes :tangle src/logger.h
+#ifndef __LOGGER_H_
+#define __LOGGER_H_
+
+#define FATAL 2
+#define DEBUG 0
+#define WARNING 1
+void U_logger(int level, const char * tag, int UpnpError);
+void S_logger(int level, const char * tag, const char * str);
+
+#endif
+  #+END_SRC 
+* Multi-Concept Functions
+
+  This section serves as a place to have full functions displayed to
+  the reader even though the said function(s) may be working with many
+  concepts from the document. For example, the main function
+  [[[func:main]]] handles the initialization of each framework (Pupnp and
+  Gstreamer). Each framework has it's own initilization code defined
+  under it's respective section, but all of that initilization code
+  must be executed within the main function to execute properly. So,
+  if at all possible we try to keep function definitions within their
+  respective sections. Only when a function ranges across multiple
+  ideas will it appear here.
+** main <<func:main>>
+   This is start of the code we want to execute. This function
+   initializes the pupnp[[[term:pupnp]]] and Gstreamer[[[term:gstreamer]]]
+   frameworks. This function also defines the methods of connecting
+   elements[[[term:element]]] in the Gstreamer[[[term:gstreamer]]]
+   pipeline[[[term:pipeline]]].  It will not negotiate connections with
+   potential network devices. Instead that will be handled by the Upnp
+   Connections Manager[[[idea:upnp_man]]].
+
+#+NAME:MAIN 
+#+BEGIN_SRC C :noweb yes :tangle src/main.c
+#include<upnp/upnp.h>
+#include"logger.c"
+
+int main(){
+#define TAG "Main-Initialization"
+n<<GST_INIT>>
+<<UPNP_INIT>>
+}
+#+END_SRC
+*** References 
+  - [[[GST_INIT]]]
+  - [[[UPNP_INIT]]]
+  - [[[idea:logging]]]
+** Loggers
+#+BEGIN_SRC C :noweb yes
+<<logger>>
+#+END_SRC
+*** References:
+    - [[[idea:logging]]]
+
+------
+
+* Notes
+- Currently how an adapter is determined to be the "first" adapter is
+  unknown <<notes:adapter>>
+
+* Glossory
+- MediaRender, a device that renders media per the UPNP Specification <<term:mediarender>>
+- start/end points, <<term:sepoint>>
+- Pipeline, an abstract construct that is used within Gstreamer to
+  facilitate data flow <<term:pipeline>>
+- Pupnp, an portable implimentation of UPNP[[[term:upnp]]] Standards <<term:pupnp>>
+- UPNP and UPNP/DLNA, a set of network standards that aim to make
+  defined services acessible to a multitude of different devices from
+  a multitude of different sources. <<term:upnp>>
+- Gstreamer, a free and open source media framework <<term:gstreamer>>
+- Element, in this document the term element refers to the structure
+  (and it's children structures) that are defined in the
+  Gstreamer[[[term:gstreamer]]] library <<term:element>>
+#+LATEX:\printbibliography
+
+
+
+
+
+
+
+
+
