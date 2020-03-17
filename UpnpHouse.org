@@ -104,7 +104,7 @@ Logger Header:
 #define FATAL 2
 #define DEBUG 0
 #define WARNING 1
-void U_logger(int level, const char * tag, int UpnpError);
+void U_logger(int level, const char * tag, int upnp_error);
 void S_logger(int level, const char * tag, const char * str);
 
 #endif
