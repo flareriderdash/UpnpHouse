@@ -11,6 +11,38 @@
   complient devices from any control device, while keeping all data
   flow in sync over the network.
 * Build System
+** Source Tree
+   The general directory and file layout is as follows:
+   - ./src
+   - ./playground
+   - ./pupnp
+   - ./lib
+   - ./lib/pupnp
+   - ./include
+   - ./include/pupnp
+** Makefile
+   The top-level Makefile for the project. We must make sure that we
+   have each subdirectory is built in a particular order so as to make
+   use of the Parralle Execution \parencite(GNUmake}. In specific we
+   must make sure that the pupnp directory has been traversed, the
+   library compiled and installed to a local directory before we
+   attempt to build our project.
+#+NAME: top-level_makefile
+#+BEGIN_SRC makefile :noweb yes :tangle Makefile
+
+
+
+#+END_SRC
+
+** Pupnp Libraries
+   The pupnp source code is placed within this source tree and we
+   require that it be compiled. We will place such code into a
+   top-level makefile.
+
+#+NAME: top-level_makefile_pupnp
+#+BEGIN_SRC makefile :noweb yes
+#+END_SRC
+
 * Upnp Connection Manager <<idea:upnp_man>>
   The Upnp Connection Manager will facilitate discover and facilitate
   connections with avalible and compatible MediaRenders[[[term:mediarender]]].
@@ -52,14 +84,23 @@
 
 * Inter-Thread Communication
 * Logging <<idea:logging>>
-  Logging is done via file or stderr, following a structure that describes:
+  Logging is done via file or one of the standard IO devices
+  (i.e. stdin, stdout, stderr), following a structure that describes:
   - Type of logging, whether it be a debug message, a fatal error message or
     a less serious issue encoutered during code execution.
-  - A timestamp percise to the millisecond, for obvious reasons.
-  - Tag/context that tells the reader of the log file where in the
-    code the error occurs. These tags will be defined within specific
-    areas of the source code. For an example see [[[func:main]]].
-  - The specific error experienced or message.
+  - A timestamp percise to the millisecond and in 24 hour time, for
+    obvious reasons. The allowed charset is below.
+    #+BEGIN_EXAMPLE
+    1234567890-:/\
+    #+END_EXAMPLE
+
+  - Tag/context that tells the reader of the log file where in the code
+    the error occurs. These tags will be defined within specific areas
+    of the source code. For an example see [[[func:main]]]. This must also
+    be seperated from the bracketed section via a space. Ended with a
+    period and a space.
+  - The specific error experienced or message. Either presenting the
+    error in format "Error: %s" or the message int format "%s"
 
     
 **  Specification
@@ -72,44 +113,272 @@
    functions. So we must create two functions, one for error messages
    that would take an int error code and translate that into the
    associated error string to put into the log and another function
-   that would take a direct messages from the logger call arguements.
+   that would take direct messages from the logger call arguements.
    
    Here are examples of log messages:
    #+BEGIN_EXAMPLE
-   [DEBUG 2020-11-14] Main-initialization. Initializing Gstreamer
-   [FATAL 2020-11-14] Main-initialization. Error: UPNP_E_INIT_FAILED
+   [DEBUG 2020-11-14:12:11:47:300] Main-initialization. Initializing Gstreamer
+   [FATAL 2020-11-14:14:34:21:569] Main-initialization. Error: UPNP_E_INIT_FAILED
    #+END_EXAMPLE
 
-   Logger Source Code:
+*** Addendum
+
+*** Logger Header:
+  #+BEGIN_SRC C :noweb yes :tangle src/logger.h
+  #ifndef __LOGGER_H_
+  #define __LOGGER_H_
+
+  #define FATAL 2
+  #define DEBUG 0
+  #define WARNING 1
+  #define LOG_SIZE 256
+  #define TIME_MAXSTR_SIZE 32
+  #define TAG_MAXSTR_SIZE 32
+  #define MSG_MAXSTR_SIZE \
+    LOG_SIZE - TIME_MAXSTR_SIZE - TAG_MAXSTR_SIZE
+  #define MSG_MAXSTR_SIZE 164
+  #define REGEX_MAXSTR_SIZE 128 + MSG_MAXSTR_SIZE
+
+
+  void U_logger(int level, const char * tag, int upnp_error);
+  void S_logger(int level, const char * tag, const char * str);
+
+  #endif
+  #+END_SRC 
+*** Logger Source Code:
 #+NAME:logger
   #+BEGIN_SRC C :noweb yes :tangle src/logger.c
-    #include<string.h>
-    #include<stdio.h>
+#include<string.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<time.h>
+#include"logger.h"
 
-    // Error logger
-    void  U_logger(int * level, const char* TAG, int error_code){
+// writes 84 + 1 buffer, remaining 171 + 1 bytes
+char * _logger(int * level, const char* TAG, char * buf){
 
-    }
+  // String variable
+  char * ret_str;
+  // Time since epoch
+  time_t *current_time;
+  // Local date variable
+  char * time_local;
 
-    // Debug logger
-    void  S_logger(int * level, const char* TAG, const char * msg){
-    }
+  //Initialize variables
+  char * ret_str = (char *)calloc(LOG_SIZE*1,sizeof(char));
+  char * time_local = (char *)calloc(TIME_MAXSTR_SIZE*1,sizeof(char));
+  current_time = (time_t *)calloc(1,sizeof(time_t));
+
+  //Get current time
+  current_time=time(current_time);
+
+  //Get local time string
+  ctime_r(current_time,time_local);
+
+  // Be careful to remember strncat 
+  // writes n+1 bytes
+  strncat(ret_str,"[",1);
+  if(level == FATAL){
+    strncat(ret_str,"FATAL",5);
+  }else if (level == DEBUG){
+    strncat(ret_str,"DEBUG",5);
+  } else{
+    strncat(ret_str,"WARN",4);
+  }
+
+  strncat(ret_str," ",1);
+  strncat(ret_str,time_local,TIME_MAXSTR_SIZE);
+  strncat(ret_str,"] ",2);
+  strncat(ret_str,TAG,TAG_STR_SIZE);
+  strncat(ret_str,". ",2);
+
+  buf=ret_str;
+  return ret_str;
+}
+
+// Error logger, total of 92 + 1 bytes written to buffer, remaining
+// bytes 163 + 1
+char * U_logger(int * level, const char* TAG, int error_code){
+
+  // Final String
+  char * final;
+  char * upnp_error_string;
+
+  // Initialize and obtain final string
+  final = _logger(level,TAG,final);
+
+  // Obtain Upnp Error code
+  upnp_error_string = UpnpGetErrorMessage(error_code);
+
+  // Concat Upnp Error code to final string
+  strncat(final,"Error: ",7);
+  strncat(final,upnp_error_string,MSG_MAXSTR_SIZE-2); // -2 to accomidate for the following newline
+
+  // Add new line character
+  strncat(final,'\x0A',1);
+  return final;
+}
+
+// Debug logger, writes 85+1 bytes to buffer, remaining 170+1
+char * S_logger(int * level, const char* TAG, const char * msg){
+
+  // Final String
+  char * final;
+
+  // Initialize and obtain final string
+  final = _logger(level,TAG,final);
+
+  strncat(final,msg,MSG_MAXSTR_SIZE-2); // -2 to accomidate for the following newline
+  strncat(final,'\x0A',1);
+  return final;
+}
   #+END_SRC   
 
-Logger Header:
-  #+BEGIN_SRC C :noweb yes :tangle src/logger.h
-#ifndef __LOGGER_H_
-#define __LOGGER_H_
+*** Unit Test:
+    Since the specification for these logger functions are variable
+    and lax in regards to how the date/time string is to be formatted
+    we will have to use regexp to accomidate for this allowance while
+    still testing to see if the logger functions follow the specified
+    behavior. This also means that we will not be able to verify that
+    the timestamp actually is accurate to the millisecond, instead
+    relying on good faith.
 
-#define FATAL 2
-#define DEBUG 0
-#define WARNING 1
-void U_logger(int level, const char * tag, int upnp_error);
-void S_logger(int level, const char * tag, const char * str);
+    #+NAME: logger_unit_test
+#+BEGIN_SRC C :noweb yes :tangle src/tests/test-logging.c
+    #include <sys/types.h>
+    #include <stdio.h>
+    #include <error.h>
+    #include <pcre.h>
+    #include <upnp/upnp.h>
+    #include "logger.h"
 
-#endif
-  #+END_SRC 
-* Multi-Concept Functions
+    #define FAIL_COMPILE_REGEX -1
+
+    int output_checker(const char * test_1, const char * test_2,
+		       const int error_code, const char * msg){
+      // define regex variables
+      char * regex_string;
+      pcre * compiled_regex;
+      char * pcre_error_string;
+      int pcre_error_offset;
+      pcre_extra * study_result;
+      int match_ret;
+
+      // Iniitialize regex string
+      regex_string = (char *)calloc(REGEX_MAXSTR_SIZE,sizeof(char));
+
+      snprintf(regex_string,REGEX_MAXSTR_SIZE-1,
+	       "^\[(?:DEBUG|FATAL|WARN)\s.*]"
+	       "\s.*\.\s(?:Error:\s%s|%s)",
+	       "UPNP_E_INIT",
+	       msg);
+
+      // compile regex, pcre_error_string is set to point at a static
+      // string if error occurs
+      compiled_regex = pcre_compile(regex_string,
+				    0,
+				    &pcre_error_string,
+				    pcre_error_offset,
+				    NULL);
+
+      // Test if regex succsesfully compiled
+      if (compiled_regex == NULL){
+	error_at_line(FAIL_COMPILE_REGEX,0,__FILE__,__LINE__,
+		      "[FATAL] Failed to compile regular expression:"
+		      "Error %s: Offset %u\n",
+		      pcre_error_string,
+		      pcre_error_offset);
+      }
+
+      // See if we can optimize regex speed
+      study_result=pcre_study(compiled_regex,0,&pcre_error_string);
+      if(study_result != NULL ){
+	error_at_line(0,0,__FILE__,__LINE__,
+		      "[WARN] Failed to optimize regex speed,"
+		      "unknown error occured\n");
+      }
+      // First test for integrity
+      match_ret = pcre_exec(compiled_regex,
+		study_result,
+		test_1,
+		strnlen(test_1,LOG_SIZE),
+		0,
+		0,
+		NULL,
+		0);
+      if (match_ret == PCRE_ERROR_NOMATCH){
+	error_at_line(-1,0,__FILE__,__LINE__,
+		      "[FATAL] Failed Logger function checks\n");
+      }
+
+      // Second test for integrity
+      match_ret = pcre_exec(compiled_regex,
+		study_result,
+		test_2,
+		strnlen(test_1,LOG_SIZE),
+		0,
+		0,
+		NULL,
+		0);
+
+      if (match_ret == PCRE_ERROR_NOMATCH){
+	error_at_line(-1,0,__FILE__,__LINE__,
+		      "[FATAL] Failed Logger function checks\n");
+      }
+      // free pcre memory block
+      pcre_free(compiled_regex);
+      return 0;
+    }
+
+    int main (){
+      // define tag to 
+      // test function with
+    #define TAG "Main-Logger-Testing"
+      // Message we send to 
+      // function
+      char * test_msg;
+
+      // Upnp error code to
+      // send to function
+      int test_error_code;
+
+      // Var we will use
+      // to check function
+      // behavior
+      char * test_1, *test_2;
+      int output_ret;
+
+      // Initialize msg var to
+      // to test function with
+      test_msg = (char *)calloc(sizeof(char),MSG_MAXSTR_SIZE);
+
+
+      // Initialize variable with
+      // random error code to test
+      // function with
+      test_error_code = UPNP_E_INIT;
+
+
+      // Use arbitrary string for message
+      strncpy(test_msg,"Hello World",MSG_MAXSTR_SIZE);
+
+
+      // Test Logger Functions
+      test_1 = U_logger(DEBUG,TAG,test_error_code);
+
+      test_2 = S_logger(DEBUG,TAG,test_msg);
+
+      output_ret =output_checker((const char*)test_1,(const char *)test_2,
+				 test_error_code, test_msg);
+
+      if (!(output_ret)){ // if successful
+	return 0;
+      }
+    }
+
+
+#+END_SRC
+* Multi-Concept Functions and Files
 
   This section serves as a place to have full functions displayed to
   the reader even though the said function(s) may be working with many
@@ -145,15 +414,6 @@ int main(){
   - [[[GST_INIT]]]
   - [[[UPNP_INIT]]]
   - [[[idea:logging]]]
-** Loggers
-#+BEGIN_SRC C :noweb yes
-<<logger>>
-#+END_SRC
-*** References:
-    - [[[idea:logging]]]
-
-------
-
 * Notes
 - Currently how an adapter is determined to be the "first" adapter is
   unknown <<notes:adapter>>
